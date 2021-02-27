@@ -56,3 +56,5 @@
 
 #endif /* FREERTOS_CONFIG_H */
 
+#define INCLUDE_uxTaskGetStackHighWaterMark     1
+
