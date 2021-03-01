@@ -1,48 +1,44 @@
 #include <Arduino.h>
 #include <Seeed_Arduino_FreeRTOS.h>
-#include <MPU9250.h>
+#include <SparkFunMPU9250-DMP.h>
 
 TaskHandle_t accelTaskHandle;
 
-MPU9250 mpu;
+MPU9250_DMP imu;
 
 static void accelThread(void* pvParameters) {
 
-    vNopDelayMS(1000); // wait another second for I2C
-
-    // settings for MPU
-    MPU9250Setting setting;
-    setting.accel_fs_sel = ACCEL_FS_SEL::A16G;
-    setting.gyro_fs_sel = GYRO_FS_SEL::G2000DPS;
-    setting.mag_output_bits = MAG_OUTPUT_BITS::M16BITS;
-    setting.fifo_sample_rate = FIFO_SAMPLE_RATE::SMPL_200HZ;
-    setting.gyro_fchoice = 0x03;
-    setting.gyro_dlpf_cfg = GYRO_DLPF_CFG::DLPF_41HZ;
-    setting.accel_fchoice = 0x01;
-    setting.accel_dlpf_cfg = ACCEL_DLPF_CFG::DLPF_45HZ;
-
-    // check if properly initialized
-    while (!mpu.setup(0x68, setting)) {
-        Serial.println("MPU connection failed.");
-        vTaskDelay(3000 / portTICK_PERIOD_MS); // 3s delay
+    while (imu.begin() != INV_SUCCESS) {
+        Serial.println("IMU setup failed");
+        delay(3000);
     }
+
+    imu.dmpBegin(DMP_FEATURE_6X_LP_QUAT | // Enable 6-axis quat
+                 DMP_FEATURE_GYRO_CAL, // Use gyro calibration
+                 100); // Set DMP FIFO rate to 100 Hz
 
     // accel task endless loop
     while (1) {
+        
+        // check for new data in FIFO buffer and update readings
+        if (imu.fifoAvailable() && imu.dmpUpdateFifo() == INV_SUCCESS) {
 
-        if (mpu.update()) {
-            Serial.print("yaw: "); Serial.print(mpu.getYaw()); Serial.print(", ");
-            Serial.print("pitch: "); Serial.print(mpu.getPitch()); Serial.print(", ");
-            Serial.print("roll: "); Serial.println(mpu.getRoll());
+            imu.computeEulerAngles(); // update quaternion
+
+            Serial.print("roll = "); Serial.print(imu.roll);
+            Serial.print(", pitch = "); Serial.print(imu.pitch);
+            Serial.print(", yaw = "); Serial.println(imu.yaw);
+
         }
 
+        // check remaining stack just in case
         UBaseType_t remStackBytes = uxTaskGetStackHighWaterMark(NULL);
         if (remStackBytes < 100) {
             Serial.print("Low remaining stack: "); Serial.println(remStackBytes);
         }
         
 
-        vTaskDelay(100 / portTICK_PERIOD_MS); // non-blocking delay
+        vTaskDelay(5 / portTICK_PERIOD_MS); // non-blocking delay
 
     }
 
@@ -50,9 +46,8 @@ static void accelThread(void* pvParameters) {
 
 void setup() {
     Serial.begin(115200);
-    Wire.begin();
 
-    vNopDelayMS(1000); // NOP instructions for processor to avoid crash
+    delay(2000);
     while (!Serial); // wait for Serial to initialize
 
     Serial.println("Serial initialized successfully");
