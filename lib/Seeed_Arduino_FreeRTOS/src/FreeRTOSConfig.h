@@ -57,4 +57,5 @@
 #endif /* FREERTOS_CONFIG_H */
 
 #define INCLUDE_uxTaskGetStackHighWaterMark     1
+#define USE_MUTEXES                             1
 
