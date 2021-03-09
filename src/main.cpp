@@ -5,6 +5,7 @@
 #define WIND A1
 
 #define G 9.807
+#define MAGDEC 10.3 // magnetic declination in Toronto
 
 TaskHandle_t comTaskHandle;
 TaskHandle_t sensorTaskHandle;
@@ -19,7 +20,7 @@ const float zeroWindVolts = 1.54;
 
 MPU9250_DMP imu;
 
-double phi;
+volatile double phi;
 
 static void comThread(void* pvParameters) {
 
@@ -105,8 +106,8 @@ static void sensorThread(void* pvParameters) {
                 if (isnan(windSpeed)) windSpeed = 0.0;
 
                 // offset the pitch and roll
-                if (avgPitch > 180) avgPitch -= 360;
-                if (avgRoll > 180) avgRoll -= 360;
+                // if (avgPitch > 180) avgPitch -= 360;
+                // if (avgRoll > 180) avgRoll -= 360;
 
                 // implement wind direction equation
                 double num = cos(avgRoll) * (G * sin(avgPitch) - avgAy);
@@ -124,8 +125,8 @@ static void sensorThread(void* pvParameters) {
                 Serial.print(avgPitch); Serial.print(", "); 
                 Serial.print(avgYaw); Serial.print(", "); 
                 Serial.print(windSpeed); Serial.print(", ");
-                Serial.println(phiTemp);
-                //Serial.println(avgTemp);
+                Serial.print(phiTemp); Serial.print(", ");
+                Serial.println(avgTemp);
 
 
 
