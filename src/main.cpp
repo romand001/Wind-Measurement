@@ -46,7 +46,7 @@ float lin_ax, lin_ay, lin_az;             // linear acceleration (acceleration w
 float q[4] = {1.0f, 0.0f, 0.0f, 0.0f};    // vector to hold quaternion
 float eInt[3] = {0.0f, 0.0f, 0.0f};       // vector to hold integral error for Mahony method
 
-MPU9250 imu(420); // instantiate MPU9250 class
+MPU9250 imu(0); // instantiate MPU9250 class
 
 
 TaskHandle_t comTaskHandle;
@@ -216,10 +216,10 @@ static void sensorThread(void* pvParameters) {
         mRes = imu.getMres(Mscale);
 
         // Comment out if using pre-measured, pre-stored offset biases
-        // imu.calibrateMPU9250(gyroBias, accelBias); // Calibrate gyro and accelerometers, load biases in bias registers
-        // Serial.println("accel biases (mg)"); Serial.println(1000.*accelBias[0]); Serial.println(1000.*accelBias[1]); Serial.println(1000.*accelBias[2]);
-        // Serial.println("gyro biases (dps)"); Serial.println(gyroBias[0]); Serial.println(gyroBias[1]); Serial.println(gyroBias[2]);
-        // delay(1000); 
+        imu.calibrateMPU9250(gyroBias, accelBias); // Calibrate gyro and accelerometers, load biases in bias registers
+        Serial.println("accel biases (mg)"); Serial.println(1000.*accelBias[0]); Serial.println(1000.*accelBias[1]); Serial.println(1000.*accelBias[2]);
+        Serial.println("gyro biases (dps)"); Serial.println(gyroBias[0]); Serial.println(gyroBias[1]); Serial.println(gyroBias[2]);
+        delay(1000); 
         
         imu.initMPU9250(Ascale, Gscale, sampleRate); 
         Serial.println("MPU9250 initialized for active data mode...."); // Initialize device for active mode read of acclerometer, gyroscope, and temperature
@@ -234,15 +234,15 @@ static void sensorThread(void* pvParameters) {
         // Serial.println("AK8963 initialized for active data mode...."); // Initialize device for active mode read of magnetometer
 
         // Comment out if using pre-measured, pre-stored offset biases
-        //  MPU9250.magcalMPU9250(magBias, magScale);
-        // Serial.println("AK8963 mag biases (mG)"); Serial.println(magBias[0]); Serial.println(magBias[1]); Serial.println(magBias[2]); 
-        // Serial.println("AK8963 mag scale (mG)"); Serial.println(magScale[0]); Serial.println(magScale[1]); Serial.println(magScale[2]); 
-        // delay(2000); // add delay to see results before serial spew of data
+        // imu.magcalMPU9250(magBias, magScale);
+        Serial.println("AK8963 mag biases (mG)"); Serial.println(magBias[0]); Serial.println(magBias[1]); Serial.println(magBias[2]); 
+        Serial.println("AK8963 mag scale (mG)"); Serial.println(magScale[0]); Serial.println(magScale[1]); Serial.println(magScale[2]); 
+        delay(2000); // add delay to see results before serial spew of data
 
-        // Serial.println("Calibration values: ");
-        // Serial.print("X-Axis sensitivity adjustment value "); Serial.println(magCalibration[0], 2);
-        // Serial.print("Y-Axis sensitivity adjustment value "); Serial.println(magCalibration[1], 2);
-        // Serial.print("Z-Axis sensitivity adjustment value "); Serial.println(magCalibration[2], 2);
+        Serial.println("Calibration values: ");
+        Serial.print("X-Axis sensitivity adjustment value "); Serial.println(magCalibration[0], 2);
+        Serial.print("Y-Axis sensitivity adjustment value "); Serial.println(magCalibration[1], 2);
+        Serial.print("Z-Axis sensitivity adjustment value "); Serial.println(magCalibration[2], 2);
     
     
     }
