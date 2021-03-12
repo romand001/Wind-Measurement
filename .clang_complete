@@ -1,0 +1,51 @@
+-IC:/Users/Darie/Documents/UofT/Y4S1/MIE491 - Capstone/Capstone Drive/Xiao Code/include
+-IC:/Users/Darie/Documents/UofT/Y4S1/MIE491 - Capstone/Capstone Drive/Xiao Code/src
+-IC:/Users/Darie/Documents/UofT/Y4S1/MIE491 - Capstone/Capstone Drive/Xiao Code/lib/Seeed_Arduino_FreeRTOS/src
+-IC:/Users/Darie/Documents/UofT/Y4S1/MIE491 - Capstone/Capstone Drive/Xiao Code/lib/RTIMULib
+-IC:/Users/Darie/.platformio/packages/framework-arduino-samd-seeed/libraries/Wire
+-IC:/Users/Darie/Documents/UofT/Y4S1/MIE491 - Capstone/Capstone Drive/Xiao Code/lib/CalLib
+-IC:/Users/Darie/Documents/UofT/Y4S1/MIE491 - Capstone/Capstone Drive/Xiao Code/lib/FlashStorage_SAMD/src
+-IC:/Users/Darie/.platformio/packages/framework-cmsis/CMSIS/Core/Include
+-IC:/Users/Darie/.platformio/packages/framework-cmsis-atmel/CMSIS/Device/ATMEL
+-IC:/Users/Darie/.platformio/packages/framework-arduino-samd-seeed/cores/arduino
+-IC:/Users/Darie/.platformio/packages/framework-arduino-samd-seeed/cores/arduino/TinyUSB
+-IC:/Users/Darie/.platformio/packages/framework-arduino-samd-seeed/cores/arduino/TinyUSB/Adafruit_TinyUSB_ArduinoCore
+-IC:/Users/Darie/.platformio/packages/framework-arduino-samd-seeed/cores/arduino/TinyUSB/Adafruit_TinyUSB_ArduinoCore/tinyusb/src
+-IC:/Users/Darie/.platformio/packages/framework-cmsis/CMSIS/DSP/Include
+-IC:/Users/Darie/.platformio/packages/framework-arduino-samd-seeed/variants/XIAO_m0
+-IC:/Users/Darie/Documents/UofT/Y4S1/MIE491 - Capstone/Capstone Drive/Xiao Code/lib/RTArduLink
+-IC:/Users/Darie/.platformio/packages/framework-arduino-samd-seeed/libraries/Adafruit_ZeroDMA
+-IC:/Users/Darie/.platformio/packages/framework-arduino-samd-seeed/libraries/Adafruit_ZeroDMA/utility
+-IC:/Users/Darie/.platformio/packages/framework-arduino-samd-seeed/libraries/EnergySaving/src
+-IC:/Users/Darie/.platformio/packages/framework-arduino-samd-seeed/libraries/FlashStorage/src
+-IC:/Users/Darie/.platformio/packages/framework-arduino-samd-seeed/libraries/HID
+-IC:/Users/Darie/.platformio/packages/framework-arduino-samd-seeed/libraries/I2S/src
+-IC:/Users/Darie/.platformio/packages/framework-arduino-samd-seeed/libraries/LoRaWan
+-IC:/Users/Darie/.platformio/packages/framework-arduino-samd-seeed/libraries/SPI
+-IC:/Users/Darie/.platformio/packages/framework-arduino-samd-seeed/libraries/Seeed_Arduino_FreeRTOS/src
+-IC:/Users/Darie/.platformio/packages/framework-arduino-samd-seeed/libraries/Seeed_Arduino_LCD
+-IC:/Users/Darie/.platformio/packages/framework-arduino-samd-seeed/libraries/SoftwareSerial
+-IC:/Users/Darie/.platformio/packages/framework-arduino-samd-seeed/libraries/TimerTC3
+-IC:/Users/Darie/.platformio/packages/framework-arduino-samd-seeed/libraries/TimerTCC0
+-IC:/Users/Darie/.platformio/packages/framework-arduino-samd-seeed/libraries/USBHost/src
+-IC:/Users/Darie/.platformio/packages/toolchain-gccarmnoneeabi@1.70201.0/arm-none-eabi/include/c++/7.2.1
+-IC:/Users/Darie/.platformio/packages/toolchain-gccarmnoneeabi@1.70201.0/arm-none-eabi/include/c++/7.2.1/arm-none-eabi
+-IC:/Users/Darie/.platformio/packages/toolchain-gccarmnoneeabi@1.70201.0/lib/gcc/arm-none-eabi/7.2.1/include
+-IC:/Users/Darie/.platformio/packages/toolchain-gccarmnoneeabi@1.70201.0/lib/gcc/arm-none-eabi/7.2.1/include-fixed
+-IC:/Users/Darie/.platformio/packages/toolchain-gccarmnoneeabi@1.70201.0/arm-none-eabi/include
+-IC:/Users/Darie/.platformio/packages/tool-unity
+-DPLATFORMIO=50100
+-DARDUINO_SAMD_ZERO
+-D__SAMD21__
+-D__SAMD21G18A__
+-DARM_MATH_CM0PLUS
+-DSEEED_XIAO_M0
+-DARDUINO=10805
+-DF_CPU=48000000L
+-DUSBCON
+-DUSB_VID=0x2886
+-DUSB_PID=0x802F
+-DUSB_PRODUCT="Seeeduino XIAO"
+-DUSB_MANUFACTURER="Seeed"
+-DARDUINO_ARCH_SAMD
+-DUSB_CONFIG_POWER=100

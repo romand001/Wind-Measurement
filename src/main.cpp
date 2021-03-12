@@ -1,53 +1,20 @@
 #include <Arduino.h>
 #include <Seeed_Arduino_FreeRTOS.h>
 #include <Wire.h>
-#include <MPU9250.h>
-//#include <MadgwickFilter.h>
+// #include "I2Cdev.h"
+#include "RTIMUSettings.h"
+#include "RTIMU.h"
+#include "RTFusionRTQF.h" 
+#include "CalLib.h"
 
 #define WIND A1
 
 #define G 9.807
 #define MAGDEC 10.3 // magnetic declination in Toronto
 
-uint8_t Gscale = GFS_250DPS, Ascale = AFS_2G, Mscale = MFS_16BITS, Mmode = M_100Hz, sampleRate = 0x04;         
-float aRes, gRes, mRes;      // scale resolutions per LSB for the sensors
-float motion = 0; // check on linear acceleration to determine motion
-// global constants for 9 DoF fusion and AHRS (Attitude and Heading Reference System)
-float pi = 3.141592653589793238462643383279502884f;
-float GyroMeasError = pi * (40.0f / 180.0f);   // gyroscope measurement error in rads/s (start at 40 deg/s)
-float GyroMeasDrift = pi * (0.0f  / 180.0f);   // gyroscope measurement drift in rad/s/s (start at 0.0 deg/s/s)
-float beta = sqrtf(3.0f / 4.0f) * GyroMeasError;   // compute beta
-float zeta = sqrtf(3.0f / 4.0f) * GyroMeasDrift;   // compute zeta, the other free parameter in the Madgwick scheme usually set to a small or zero value
-bool wakeup;
-
-bool newMagData = false;
-
-int16_t MPU9250Data[7]; // used to read all 14 bytes at once from the MPU9250 accel/gyro
-int16_t magCount[3];    // Stores the 16-bit signed magnetometer sensor output
-float   magCalibration[3] = {0.5, 0.5, 0.5};  // Factory mag calibration and mag bias
-float   temperature;    // Stores the MPU9250 internal chip temperature in degrees Celsius
-float   SelfTest[6];    // holds results of gyro and accelerometer self test
-
-// These can be measured once and entered here or can be calculated each time the device is powered on
-float   gyroBias[3] = {12.81, -7.79, -4.85}, accelBias[3] = {-5.25, -8.54, -76.66};
-float   magBias[3] = {71.04, 122.43, -36.90}, magScale[3]  = {1.01, 1.03, 0.96}; // Bias corrections for gyro and accelerometer
-
-
-uint32_t delt_t = 0;                      // used to control display output rate
-uint32_t count = 0, sumCount = 0;         // used to control display output rate
-float pitch, yaw, roll;                   // absolute orientation
-float a12, a22, a31, a32, a33;            // rotation matrix coefficients for Euler angles and gravity components
-float deltat = 0.0f, sum = 0.0f;          // integration interval for both filter schemes
-uint32_t lastUpdate = 0, firstUpdate = 0; // used to calculate integration interval
-uint32_t Now = 0;                         // used to calculate integration interval
-
-float ax, ay, az, gx, gy, gz, mx, my, mz; // variables to hold latest sensor data values 
-float lin_ax, lin_ay, lin_az;             // linear acceleration (acceleration with gravity component subtracted)
-float q[4] = {1.0f, 0.0f, 0.0f, 0.0f};    // vector to hold quaternion
-float eInt[3] = {0.0f, 0.0f, 0.0f};       // vector to hold integral error for Mahony method
-
-MPU9250 imu(0); // instantiate MPU9250 class
-
+RTIMU *imu;
+RTFusionRTQF fusion;
+RTIMUSettings settings;
 
 TaskHandle_t comTaskHandle;
 TaskHandle_t sensorTaskHandle;
@@ -60,8 +27,11 @@ const TickType_t sensorFrequency = 10 / portTICK_RATE_MS;
 const uint32_t averageOver = 10; // take the average over this many sensor measurements
 const float zeroWindVolts = 1.54;
 
+const float pi = 3.14159;
+
 volatile double phi;
 
+/*
 __attribute__((optimize("O3"))) void MadgwickQuaternionUpdate(float ax, float ay, float az, float gx, float gy, float gz, float mx, float my, float mz)
         {
             float q1 = q[0], q2 = q[1], q3 = q[2], q4 = q[3];   // short name local variable for readability
@@ -154,6 +124,8 @@ __attribute__((optimize("O3"))) void MadgwickQuaternionUpdate(float ax, float ay
 
         }
 
+*/
+
 
 static void comThread(void* pvParameters) {
 
@@ -188,136 +160,51 @@ static void sensorThread(void* pvParameters) {
     Wire.begin();
     Wire.setClock(400000); // 400kHz I2C
     delay(500);
-    // imu.I2Cscan();
-    // Serial.println("MPU9250 9-axis motion sensor...");
-    uint8_t c = imu.getMPU9250ID();
-    // Serial.print("MPU9250 "); Serial.print("I AM "); Serial.print(c, HEX); Serial.print(" I should be "); Serial.println(0x70, HEX);
-    // delay(1000);
-
-    // somehow WHO_AM_I got changed to 0x70
-    if (c == 0x70 ) // WHO_AM_I should always be 0x71 for MPU9250, 0x73 for MPU9255 
-    {  
-        // Serial.println("MPU9250 is online...");
-        
-        imu.resetMPU9250(); // start by resetting MPU9250
-        
-        // imu.SelfTest(SelfTest); // Start by performing self test and reporting values
-        // Serial.print("x-axis self test: acceleration trim within : "); Serial.print(SelfTest[0],1); Serial.println("% of factory value");
-        // Serial.print("y-axis self test: acceleration trim within : "); Serial.print(SelfTest[1],1); Serial.println("% of factory value");
-        // Serial.print("z-axis self test: acceleration trim within : "); Serial.print(SelfTest[2],1); Serial.println("% of factory value");
-        // Serial.print("x-axis self test: gyration trim within : "); Serial.print(SelfTest[3],1); Serial.println("% of factory value");
-        // Serial.print("y-axis self test: gyration trim within : "); Serial.print(SelfTest[4],1); Serial.println("% of factory value");
-        // Serial.print("z-axis self test: gyration trim within : "); Serial.print(SelfTest[5],1); Serial.println("% of factory value");
-        delay(500);
-
-        // get sensor resolutions, only need to do this once
-        aRes = imu.getAres(Ascale);
-        gRes = imu.getGres(Gscale);
-        mRes = imu.getMres(Mscale);
-
-        // Comment out if using pre-measured, pre-stored offset biases
-        imu.calibrateMPU9250(gyroBias, accelBias); // Calibrate gyro and accelerometers, load biases in bias registers
-        Serial.println("accel biases (mg)"); Serial.println(1000.*accelBias[0]); Serial.println(1000.*accelBias[1]); Serial.println(1000.*accelBias[2]);
-        Serial.println("gyro biases (dps)"); Serial.println(gyroBias[0]); Serial.println(gyroBias[1]); Serial.println(gyroBias[2]);
-        delay(1000); 
-        
-        imu.initMPU9250(Ascale, Gscale, sampleRate); 
-        Serial.println("MPU9250 initialized for active data mode...."); // Initialize device for active mode read of acclerometer, gyroscope, and temperature
-        
-        // Read the WHO_AM_I register of the magnetometer, this is a good test of communication
-        byte d = imu.getAK8963CID();  // Read WHO_AM_I register for AK8963
-        // Serial.print("AK8963 "); Serial.print("I AM "); Serial.print(d, HEX); Serial.print(" I should be "); Serial.println(0x48, HEX);
-        delay(500); 
-        
-        // Get magnetometer calibration from AK8963 ROM
-        imu.initAK8963Slave(Mscale, Mmode, magCalibration); 
-        // Serial.println("AK8963 initialized for active data mode...."); // Initialize device for active mode read of magnetometer
-
-        // Comment out if using pre-measured, pre-stored offset biases
-        // imu.magcalMPU9250(magBias, magScale);
-        Serial.println("AK8963 mag biases (mG)"); Serial.println(magBias[0]); Serial.println(magBias[1]); Serial.println(magBias[2]); 
-        Serial.println("AK8963 mag scale (mG)"); Serial.println(magScale[0]); Serial.println(magScale[1]); Serial.println(magScale[2]); 
-        delay(2000); // add delay to see results before serial spew of data
-
-        Serial.println("Calibration values: ");
-        Serial.print("X-Axis sensitivity adjustment value "); Serial.println(magCalibration[0], 2);
-        Serial.print("Y-Axis sensitivity adjustment value "); Serial.println(magCalibration[1], 2);
-        Serial.print("Z-Axis sensitivity adjustment value "); Serial.println(magCalibration[2], 2);
     
-    
+    imu = RTIMU::createIMU(&settings);
+
+    int errcode;
+    Serial.print("ArduinoIMU starting using device "); Serial.println(imu->IMUName());
+    if ((errcode = imu->IMUInit()) < 0) {
+        Serial.print("Failed to init IMU: "); Serial.println(errcode);
     }
+  
+    if (imu->getCalibrationValid())
+        Serial.println("Using compass calibration");
     else
-    {
-        Serial.print("Could not connect to MPU9250: 0x");
-        Serial.println(c, HEX);
-        while(1) ; // Loop forever if communication doesn't happen
-    }
+        Serial.println("No valid compass calibration data");
+
+
+    float roll = 0.0, pitch = 0.0, yaw = 0.0, lin_ax = 0.0, lin_ay = 0.0, temperature = 0.0;
+
 
     xLastWakeTime = xTaskGetTickCount(); // get starting tick count
 
     // accel task endless loop
     while (1) {
 
-        //unsigned long start = micros();
-        
-        imu.readMPU9250Data(MPU9250Data);
-   
-        // Now we'll calculate the accleration value into actual g's
-        ax = (float)MPU9250Data[0]*aRes - accelBias[0];  // get actual g value, this depends on scale being set
-        ay = (float)MPU9250Data[1]*aRes - accelBias[1];   
-        az = (float)MPU9250Data[2]*aRes - accelBias[2];  
+        // unsigned long start = micros();
 
-        // Calculate the gyro value into actual degrees per second
-        gx = (float)MPU9250Data[4]*gRes;  // get actual gyro value, this depends on scale being set
-        gy = (float)MPU9250Data[5]*gRes;  
-        gz = (float)MPU9250Data[6]*gRes; 
-    
-        // if( MPU9250.checkNewMagData() == true) { // wait for magnetometer data ready bit to be set
-        imu.readMagData(magCount);  // Read the x/y/z adc values
-    
-        // Calculate the magnetometer values in milliGauss
-        // Include factory calibration per data sheet and user environmental corrections
-        mx = (float)magCount[0]*mRes*magCalibration[0] - magBias[0];  // get actual magnetometer value, this depends on scale being set
-        my = (float)magCount[1]*mRes*magCalibration[1] - magBias[1];  
-        mz = (float)magCount[2]*mRes*magCalibration[2] - magBias[2];  
-        mx *= magScale[0];
-        my *= magScale[1];
-        mz *= magScale[2]; 
-    
-    
-        for(uint8_t i = 0; i < 10; i++) { // iterate a fixed number of times per data read cycle
-            Now = micros();
-            deltat = ((Now - lastUpdate)/1000000.0f); // set integration time by time elapsed since last filter update
-            lastUpdate = Now;
+        if (imu->IMURead()) {
 
-            sum += deltat; // sum for averaging filter update rate
-            sumCount++;
+            fusion.newIMUData(imu->getGyro(), imu->getAccel(), imu->getCompass(), imu->getTimestamp());
 
-            MadgwickQuaternionUpdate(-ax, +ay, +az, gx*pi/180.0f, -gy*pi/180.0f, -gz*pi/180.0f,  my,  -mx, mz);
+            // if (imu->IMUGyroBiasValid())
+            //     Serial.println("gyro bias valid");
+            // else
+            //     Serial.println("calculating gyro bias");
+
+            RTVector3 accel = imu->getAccel();
+            RTVector3 euler = fusion.getFusionPose();
+
+            roll = euler.x(); pitch = euler.y(); yaw = euler.z();
+            lin_ax = accel.x(); lin_ay = accel.y();
+
+            // need to read temperature too (use kris winer method)
+
+            // RTMath::displayRollPitchYaw("Pose:", (RTVector3&)fusion.getFusionPose());
+
         }
-
-        temperature = ((float) MPU9250Data[3]) / 333.87f + 21.0f; // Gyro chip temperature in degrees Centigrade
-        //Serial.print("Gyro temperature is ");  Serial.print(temperature, 1);  Serial.println(" degrees C"); // Print T values to tenths of s degree C     
-
-        a12 =   2.0f * (q[1] * q[2] + q[0] * q[3]);
-        a22 =   q[0] * q[0] + q[1] * q[1] - q[2] * q[2] - q[3] * q[3];
-        a31 =   2.0f * (q[0] * q[1] + q[2] * q[3]);
-        a32 =   2.0f * (q[1] * q[3] - q[0] * q[2]);
-        a33 =   q[0] * q[0] - q[1] * q[1] - q[2] * q[2] + q[3] * q[3];
-        pitch = -asinf(a32);
-        roll  = atan2f(a31, a33);
-        yaw   = atan2f(a12, a22);
-        pitch *= 180.0f / pi;
-        yaw   *= 180.0f / pi; 
-        yaw   += MAGDEC; 
-        if(yaw < 0) yaw   += 360.0f; // Ensure yaw stays between 0 and 360
-        roll  *= 180.0f / pi;
-        lin_ax = ax + a31;
-        lin_ay = ay + a32;
-        lin_az = az - a33;
-
-        //sumCount = 0; 
-        //sum = 0;
 
         float windVolts = analogRead(WIND) / 1240.91;
         // consider approximating this with integer math
@@ -342,10 +229,10 @@ static void sensorThread(void* pvParameters) {
 
         Serial.print(roll); Serial.print(", "); 
         Serial.print(pitch); Serial.print(", "); 
-        Serial.print(yaw); Serial.print(", "); 
-        Serial.print(windSpeed); Serial.print(", ");
-        Serial.print(phiTemp); Serial.print(", ");
-        Serial.println(temperature);
+        Serial.println(yaw);// Serial.print(", "); 
+        // Serial.print(windSpeed); Serial.print(", ");
+        // Serial.print(phiTemp); Serial.print(", ");
+        // Serial.println(temperature);
 
 
         // unsigned long end = micros();
