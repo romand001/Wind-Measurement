@@ -1,7 +1,6 @@
 #include <Arduino.h>
 #include <Seeed_Arduino_FreeRTOS.h>
 #include <Wire.h>
-// #include "I2Cdev.h"
 #include "RTIMUSettings.h"
 #include "RTIMU.h"
 #include "RTFusionRTQF.h" 
@@ -18,18 +17,21 @@ RTIMUSettings settings;
 
 TaskHandle_t comTaskHandle;
 TaskHandle_t sensorTaskHandle;
-SemaphoreHandle_t dirMutex;
+SemaphoreHandle_t windMutex;
 
 // run tasks every __ ms
-const TickType_t comFrequency = 100 / portTICK_RATE_MS;
-const TickType_t sensorFrequency = 10 / portTICK_RATE_MS;
+const int comMS = 100;
+const int sensorMS = 10; // also used to get yaw rate
+const TickType_t comFrequency = comMS / portTICK_RATE_MS;
+const TickType_t sensorFrequency = sensorMS / portTICK_RATE_MS;
 
-const uint32_t averageOver = 10; // take the average over this many sensor measurements
-const float zeroWindVolts = 1.54;
+const float zeroWindVolts = 1.54; // analog sensor output when there is no wind (found by testing)
+const float sensorRadius = 1.0; // distance from drone's centre of rotation to wind sensor
 
-const float pi = 3.14159;
+const float pi = 3.141592653589793238462643383279502884f;
+const float R = 6371000; // radius of earth
 
-volatile double phi;
+volatile float windSpeed, windDirection; // global vars accessed by both tasks
 
 /*
 __attribute__((optimize("O3"))) void MadgwickQuaternionUpdate(float ax, float ay, float az, float gx, float gy, float gz, float mx, float my, float mz)
@@ -126,8 +128,37 @@ __attribute__((optimize("O3"))) void MadgwickQuaternionUpdate(float ax, float ay
 
 */
 
+// inspired by Kris Weiner's MPU9250 library
+float getTemperature() {
 
+    uint8_t rawData[2];
+
+    Wire.beginTransmission(0x68); // Initialize the Tx buffer
+    Wire.write(0x41);            // temperature high byte
+    Wire.endTransmission(false); // Send the Tx buffer, but send a restart to keep connection alive
+    uint8_t i = 0;
+    Wire.requestFrom(0x68, 2);  // Read 2bytes from slave register address 
+    while (Wire.available()) {
+        rawData[i++] = Wire.read(); // Put read results in the Rx buffer
+    } 
+    
+    int16_t rawTemp = ((int16_t)rawData[0] << 8) | rawData[1]; // combine high and low
+
+    float tempC = ((float) rawTemp) / 333.87f + 21.0f; // convert to celsius
+
+    return tempC;
+}
+
+// task responsible for communication with DR2000.
+// receives GPS coordinates, keeps track of drone velocity
+// , corrects wind velocity (from other task), and sends back to DR2000.
+// this task is mostly untested.
 static void comThread(void* pvParameters) {
+
+    float droneLatSpeed, droneLonSpeed;
+
+    int lastTimestamp = 0;
+    float lastLatitude, lastLongitude;
 
     TickType_t xLastWakeTime; // loop start ticks
 
@@ -137,9 +168,58 @@ static void comThread(void* pvParameters) {
 
         // check if GPS data incoming from DR2000
         if (Serial1.available()) {
-            // parse GPS data here
+            // parse GPS data here, something like this:
+            String rawTimestamp = Serial1.readStringUntil(',');
+            String rawLatitude = Serial1.readStringUntil(',');
+            String rawLongitude = Serial1.readStringUntil('\n');
+
+            // these return zero if failed
+            float timestamp = rawTimestamp.toFloat();
+            float latitude = rawLatitude.toFloat();
+            float longitude = rawLongitude.toFloat();
+
+            // check if we have the last measurements, and if all conversions succeeded
+            if ((int)lastTimestamp && (int)timestamp && (int)latitude && (int)longitude) {
+                // compute distances travelled, time difference, then speeds
+                float latDistance = R * (latitude - lastLatitude) * pi/180;
+                float lonDistance = R * cos(latitude) * (longitude - lastLongitude) * pi / 180;
+                float deltaT = lastTimestamp - timestamp;
+
+                // compute drone speeds
+                droneLatSpeed = latDistance / deltaT;
+                droneLonSpeed = lonDistance / deltaT;
+
+                // grab local copies of global wind velocity variables
+                xSemaphoreTake(windMutex, portMAX_DELAY);
+                float windSpeedLocal = windSpeed;
+                float windDirectionLocal = windDirection;
+                xSemaphoreGive(windMutex);
+
+                // correct wind velocity
+                float windSpeedLat = windSpeedLocal * cos(windDirectionLocal) + droneLatSpeed;
+                float windSpeedLon = windSpeedLocal * sin(windDirectionLocal) + droneLonSpeed;
+
+                float correctedWindSpeed = sqrt( pow(windSpeedLat, 2) + pow(windSpeedLon, 2) );
+                float correctedWindDirection = atan2(windSpeedLon, windSpeedLat); // (-pi, pi]
+                if (correctedWindDirection < 0) correctedWindDirection += 2*pi; // (0, pi]
+
+                // send corrected speed and direction to DR2000
+                // format: "speed, direction\n"
+                Serial1.print(correctedWindSpeed); Serial1.print(", ");
+                Serial1.println(correctedWindDirection * 180/pi);
+
+            }
+            // update previous values
+            lastTimestamp = timestamp; 
+            lastLatitude = latitude; 
+            lastLongitude = longitude;
+
+            
 
         }
+        Serial1.flush();
+
+
 
         // check remaining stack just in case
         UBaseType_t remStackBytes = uxTaskGetStackHighWaterMark(NULL);
@@ -152,6 +232,9 @@ static void comThread(void* pvParameters) {
 
 }
 
+// task responsible for reading sensors, IMU sensor fusion, computing
+// wind direction and speed, setting global variables.
+// fully testing and working, with seemingly accurate results.
 static void sensorThread(void* pvParameters) {
 
     TickType_t xLastWakeTime; // loop start ticks
@@ -175,7 +258,9 @@ static void sensorThread(void* pvParameters) {
         Serial.println("No valid compass calibration data");
 
 
-    float roll = 0.0, pitch = 0.0, yaw = 0.0, lin_ax = 0.0, lin_ay = 0.0, temperature = 0.0;
+    float roll = 0.0f, pitch = 0.0f, yaw = 0.0f, lin_ax = 0.0f, lin_ay = 0.0f;
+
+    float yawRate = 0.0f, lastYaw = 0.0f; // last yaw used to get yaw rate
 
 
     xLastWakeTime = xTaskGetTickCount(); // get starting tick count
@@ -200,41 +285,58 @@ static void sensorThread(void* pvParameters) {
             roll = euler.x(); pitch = euler.y(); yaw = euler.z();
             lin_ax = accel.x(); lin_ay = accel.y();
 
-            // need to read temperature too (use kris winer method)
-
-            // RTMath::displayRollPitchYaw("Pose:", (RTVector3&)fusion.getFusionPose());
-
         }
 
-        float windVolts = analogRead(WIND) / 1240.91;
-        // consider approximating this with integer math
-        float windSpeed = 0.44704 * pow( (( (windVolts - zeroWindVolts) / ( 3.038517 * pow(temperature, 0.115157)) ) / 0.087288), 3.009364);
-        if (isnan(windSpeed)) windSpeed = 0.0;
+        // compute absolute value of angular rate
+        if (lastYaw != 0.0f) {
+            yawRate = abs(pi/180 * (yaw - lastYaw) / ((float)sensorMS / 1000.0f)); // rad/s
+        }
 
-        // offset the pitch and roll
-        // if (avgPitch > 180) avgPitch -= 360;
-        // if (avgRoll > 180) avgRoll -= 360;
+        float temperature = getTemperature(); // degrees C
 
-        // implement wind direction equation
-        double num = cos(roll * pi/180) * (G * sin(pitch * pi/180) - lin_ay);
-        double den = cos(pitch * pi/180) * (G * sin(roll * pi/180) - lin_ax);
-        double phiTemp = atan( sqrt(num / den) ) * 180 / pi;
+        float windVolts = analogRead(WIND) / 1240.91f; // mapping 12 bit reading to voltage in (0, 3.3)
 
-        if (isnan(phiTemp)) phiTemp = 0.0;
+        // empirical fit from Modern Device Wind Sensor Rev. P calibration post
+        float windSpeedLocal = 0.44704f * pow( (( (windVolts - zeroWindVolts) 
+                        / ( 3.038517f * pow(temperature, 0.115157f)) ) / 0.087288f), 3.009364f);
+        if (isnan(windSpeedLocal)) windSpeedLocal = 0.0f;
 
-        // use mutex for updating global variable
-        xSemaphoreTake(dirMutex, portMAX_DELAY);
-        phi = phiTemp;
-        xSemaphoreGive(dirMutex);
+        // correct wind speed based on yaw rate, if available
+        if (yawRate) windSpeedLocal -= yawRate * sensorRadius;
 
-        Serial.print(roll); Serial.print(", "); 
-        Serial.print(pitch); Serial.print(", "); 
-        Serial.println(yaw);// Serial.print(", "); 
-        // Serial.print(windSpeed); Serial.print(", ");
-        // Serial.print(phiTemp); Serial.print(", ");
-        // Serial.println(temperature);
+        ////////// WIND DIRECTION CALCULATION ////////////
 
+        // get numerators and denominators
+        float vy = (G * sin(pitch * pi/180) - lin_ay) / cos(pitch * pi/180);
+        float vx = (G * sin(roll * pi/180) - lin_ax) / cos(roll * pi/180);
 
+        // square root magnitude, keep signs
+        vy = vy/abs(vy) * sqrt(abs(vy));
+        vx = vx/abs(vx) * sqrt(abs(vx));
+
+        // compute angle (local variable), assuming positive numerator and denominator 
+        float windDirectionLocal = atan2(vy, vx); // (-pi, pi]
+
+        if (windDirectionLocal < 0) windDirectionLocal += 2*pi; // map to (0, pi]
+
+        // subtract the yaw to get wind direction relative to magnetic north
+        // NOTE: THIS SENSOR FUSION LIBRARY IS PRODUCING DRIFT IN YAW, MUST FIND BETTER IMPLEMENTATION
+        // recommendation: use higher quality sensor with less bias and noise OR order many MPU-9250 and use best ones
+        // magnetic calibration should be done properly, and the library used should be well understood
+        /* In this library, CalLib.h can be used to calibrate, but it has been modified to write values 
+        to flash instead of eeprom, since this micrcontroller does not have eeprom. the flash has limited life, so definitely 
+        do not use this microcontroller in the final design
+        */
+        windDirectionLocal -= yaw;
+
+        Serial.println(windDirectionLocal * 180/pi);
+
+        // use mutex to udpate global variable
+        xSemaphoreTake(windMutex, portMAX_DELAY);
+        windSpeed = windSpeedLocal;
+        windDirection = windDirectionLocal;
+        xSemaphoreGive(windMutex);
+        
         // unsigned long end = micros();
         // Serial.print("calcs took "); Serial.print((end - start)/1000); Serial.println(" ms");
 
@@ -259,7 +361,7 @@ void setup() {
     delay(2000);
     while (!Serial); // wait for Serial to initialize
 
-    dirMutex = xSemaphoreCreateMutex();
+    windMutex = xSemaphoreCreateMutex();
 
     // create task for handling IMU and calculating airspeed direction
     xTaskCreate(
@@ -275,7 +377,7 @@ void setup() {
     xTaskCreate(
         comThread,              // function to run
         "Communication Task",   // task name
-        256,                    // stack size for task
+        512,                    // stack size for task
         NULL,                   // parameters
         tskIDLE_PRIORITY + 1,   // priority
         &comTaskHandle          // task handle address
