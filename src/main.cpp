@@ -315,9 +315,7 @@ static void sensorThread(void* pvParameters) {
         vx = vx/abs(vx) * sqrt(abs(vx));
 
         // compute angle (local variable), assuming positive numerator and denominator 
-        float windDirectionLocal = atan2(vy, vx); // (-pi, pi]
-
-        if (windDirectionLocal < 0) windDirectionLocal += 2*pi; // map to (0, pi]
+        float windDirectionLocal = atan2(vy, vx) + pi; // (-pi, pi], shifted over to (0, 2pi]
 
         // subtract the yaw to get wind direction relative to magnetic north
         // NOTE: THIS SENSOR FUSION LIBRARY IS PRODUCING DRIFT IN YAW, MUST FIND BETTER IMPLEMENTATION
